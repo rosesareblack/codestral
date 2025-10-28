@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
 import { FileNode, LSPDiagnostic, Workspace } from '@/types';
 import { fileSystemService } from '@/services/FileSystemService';
-import * as monaco from 'monaco-editor';
+// Monaco is loaded through @monaco-editor/react
 import {
   Maximize2,
   Minimize2,
@@ -75,8 +75,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   
   // Editor refs
-  const mainEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
-  const secondaryEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const mainEditorRef = useRef<any>(null);
+  const secondaryEditorRef = useRef<any>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lintingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -307,7 +307,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     const model = monacoInstance.editor.getModel(monacoInstance.Uri.file(filePath));
     if (!model) return;
 
-    const markers: monaco.editor.IMarkerData[] = [];
+    const markers: any[] = [];
 
     // Basic syntax validation based on language
     switch (language) {
@@ -319,7 +319,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           new Function(content);
         } catch (error) {
           markers.push({
-            severity: monaco.MarkerSeverity.Error,
+            severity: monacoInstance.MarkerSeverity.Error,
             message: `Syntax Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
             startLineNumber: 1,
             startColumn: 1,
@@ -334,7 +334,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           JSON.parse(content);
         } catch (error) {
           markers.push({
-            severity: monaco.MarkerSeverity.Error,
+            severity: monacoInstance.MarkerSeverity.Error,
             message: `Invalid JSON: ${error instanceof Error ? error.message : 'Parse error'}`,
             startLineNumber: 1,
             startColumn: 1,
@@ -353,7 +353,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
           if (line.includes('print ') && !line.trim().startsWith('#')) {
             // Warning about print statements (Python 2 style)
             markers.push({
-              severity: monaco.MarkerSeverity.Warning,
+              severity: monacoInstance.MarkerSeverity.Warning,
               message: 'Consider using print() function (Python 3)',
               startLineNumber: lineNum,
               startColumn: 1,
@@ -372,9 +372,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
       filePath,
       line: marker.startLineNumber,
       column: marker.startColumn,
-      severity: marker.severity === monaco.MarkerSeverity.Error ? 'error' :
-                marker.severity === monaco.MarkerSeverity.Warning ? 'warning' :
-                marker.severity === monaco.MarkerSeverity.Info ? 'info' : 'hint',
+      severity: marker.severity === monacoInstance.MarkerSeverity.Error ? 'error' :
+                marker.severity === monacoInstance.MarkerSeverity.Warning ? 'warning' :
+                marker.severity === monacoInstance.MarkerSeverity.Info ? 'info' : 'hint',
       message: marker.message,
       source: 'Codestral Linter',
     }));
@@ -415,7 +415,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [tabs]);
 
   // Close tab
-  const closeTab = useCallback((tabId: string) => {
+  const closeTab = useCallback(async (tabId: string) => {
     setTabs(prev => prev.filter(tab => tab.id !== tabId));
     
     if (activeTabId === tabId) {
@@ -426,9 +426,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     // Mark file as closed
     const tab = tabs.find(t => t.id === tabId);
     if (tab) {
-      const file = fileSystemService.getFile(tab.filePath);
-      if (file) {
-        file.isOpen = false;
+      try {
+        const file = await fileSystemService.getFile(tab.filePath);
+        if (file) {
+          file.isOpen = false;
+        }
+      } catch (error) {
+        console.error('Error updating file status:', error);
       }
     }
   }, [tabs, activeTabId]);

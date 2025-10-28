@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import * as ContextMenu from '@radix-ui/react-context-menu';
 import * as Dialog from '@radix-ui/react-dialog';
-import { FileNode } from '@/types';
+import { FileNode, Workspace } from '@/types';
 import { workspaceService } from '@/services/WorkspaceService';
 import { fileSystemService } from '@/services/FileSystemService';
 import {
@@ -245,29 +245,36 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     setDialogOpen(true);
   };
 
-  const handleSaveNew = () => {
+  const handleSaveNew = async () => {
     if (!newName.trim() || !workspace) return;
 
     const fullPath = selectedParentPath 
       ? `${selectedParentPath}/${newName.trim()}`
       : newName.trim();
 
-    if (dialogType === 'file') {
-      const language = fileSystemService.detectLanguage(newName);
-      const newFile = fileSystemService.createFile(newName, fullPath, '', language);
-      workspaceService.addFileToWorkspace(workspace.id, newFile);
-    } else {
-      const newFolder = fileSystemService.createFolder(newName, fullPath);
-      workspaceService.addFileToWorkspace(workspace.id, newFolder);
-    }
+    try {
+      if (dialogType === 'file') {
+        const language = fileSystemService.detectLanguage(newName);
+        const newFile = await fileSystemService.createFile(newName, fullPath, '', language);
+        await workspaceService.addFileToWorkspace(workspace.id, newFile);
+      } else {
+        const newFolder = await fileSystemService.createFolder(newName, fullPath);
+        await workspaceService.addFileToWorkspace(workspace.id, newFolder);
+      }
 
-    const updatedFiles = fileSystemService.buildFileTree(workspaceService.getWorkspace(workspace.id)?.files || []);
-    setFiles(updatedFiles);
-    setDialogOpen(false);
-    setNewName('');
+      // Refresh files from the file system
+      const allFiles = await fileSystemService.getAllFiles();
+      const updatedFiles = fileSystemService.buildFileTree(allFiles);
+      setFiles(updatedFiles);
+      setDialogOpen(false);
+      setNewName('');
+    } catch (error) {
+      console.error('Error creating file/folder:', error);
+      alert('Failed to create file/folder. Please try again.');
+    }
   };
 
-  const handleRename = (node: FileNode, newName: string) => {
+  const handleRename = async (node: FileNode, newName: string) => {
     if (!workspace) return;
 
     const oldPath = node.path;
@@ -275,25 +282,34 @@ export const FileExplorer: React.FC<FileExplorerProps> = ({
     pathParts[pathParts.length - 1] = newName;
     const newPath = pathParts.join('/');
 
-    // Update the node
-    node.name = newName;
-    node.path = newPath;
-
-    // Update workspace files
-    const workspaceFiles = workspace.files.map(f => 
-      f.path === oldPath ? { ...f, name: newName, path: newPath } : f
-    );
-
-    workspaceService.updateWorkspace(workspace.id, { files: workspaceFiles });
-    setFiles(fileSystemService.buildFileTree(workspaceFiles));
+    try {
+      await fileSystemService.renameFile(oldPath, newPath, newName);
+      
+      // Refresh files from the file system
+      const allFiles = await fileSystemService.getAllFiles();
+      const updatedFiles = fileSystemService.buildFileTree(allFiles);
+      setFiles(updatedFiles);
+    } catch (error) {
+      console.error('Error renaming file/folder:', error);
+      alert('Failed to rename file/folder. Please try again.');
+    }
   };
 
-  const handleDelete = (node: FileNode) => {
+  const handleDelete = async (node: FileNode) => {
     if (!workspace || !confirm(`Are you sure you want to delete "${node.name}"?`)) return;
 
-    workspaceService.removeFileFromWorkspace(workspace.id, node.path);
-    const updatedFiles = fileSystemService.buildFileTree(workspaceService.getWorkspace(workspace.id)?.files || []);
-    setFiles(updatedFiles);
+    try {
+      await fileSystemService.deleteFile(node.path);
+      await workspaceService.removeFileFromWorkspace(workspace.id, node.path);
+      
+      // Refresh files from the file system
+      const allFiles = await fileSystemService.getAllFiles();
+      const updatedFiles = fileSystemService.buildFileTree(allFiles);
+      setFiles(updatedFiles);
+    } catch (error) {
+      console.error('Error deleting file/folder:', error);
+      alert('Failed to delete file/folder. Please try again.');
+    }
   };
 
   const renderTree = (nodes: FileNode[], level: number = 0) => {

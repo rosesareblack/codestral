@@ -9,6 +9,7 @@ import { AIChatPanel } from './AIChatPanel';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { workspaceService } from '@/services/WorkspaceService';
+import { fileSystemService } from '@/services/FileSystemService';
 import { FileNode, Workspace } from '@/types';
 
 export const IDELayout: React.FC = () => {
@@ -72,20 +73,29 @@ export const IDELayout: React.FC = () => {
     }
   };
 
-  const handleFileContentChange = (fileId: string, content: string) => {
+  const handleFileContentChange = async (fileId: string, content: string) => {
     // Update open file content
     const updatedOpenFiles = openFiles.map(f => 
       f.id === fileId ? { ...f, content, isDirty: true } : f
     );
     setOpenFiles(updatedOpenFiles);
     
-    // Update workspace file content
-    if (currentWorkspace) {
-      const updatedFiles = currentWorkspace.files.map(f =>
-        f.id === fileId ? { ...f, content, isDirty: true } : f
-      );
-      workspaceService.updateWorkspace(currentWorkspace.id, { files: updatedFiles });
-      setCurrentWorkspace({ ...currentWorkspace, files: updatedFiles });
+    // Find the file for this update
+    const selectedFile = updatedOpenFiles.find(f => f.id === fileId);
+    
+    // Update file content in the file system
+    if (currentWorkspace && selectedFile) {
+      try {
+        await fileSystemService.updateFileContent(selectedFile.path, content);
+        
+        // Update local workspace state
+        const updatedFiles = currentWorkspace.files.map(f =>
+          f.id === fileId ? { ...f, content, isDirty: false } : f
+        );
+        setCurrentWorkspace({ ...currentWorkspace, files: updatedFiles });
+      } catch (error) {
+        console.error('Error updating file content:', error);
+      }
     }
   };
 

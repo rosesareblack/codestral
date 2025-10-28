@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Menu, 
   FolderOpen, 
@@ -11,9 +11,12 @@ import {
   Search,
   GitCommit,
   Files,
-  Terminal
+  Terminal,
+  User,
+  LogOut
 } from 'lucide-react';
 import { Workspace, FileNode } from '@/types';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface HeaderProps {
   workspace: Workspace;
@@ -40,7 +43,17 @@ export const Header: React.FC<HeaderProps> = ({
   onLeftPanelToggle,
   onRightPanelToggle
 }) => {
+  const { user, signOut } = useAuth();
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const activeFile = openFiles.find(f => f.id === activeFileId);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
+  };
 
   return (
     <header className="h-12 bg-zinc-900 border-b border-zinc-700 flex items-center px-4 gap-4">
@@ -171,6 +184,48 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Search className="w-4 h-4" />
         </button>
+
+        {/* User Menu */}
+        <div className="relative">
+          <button 
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            className="flex items-center gap-2 p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded transition-colors"
+          >
+            <User className="w-4 h-4" />
+            <span className="text-sm hidden md:block">{user?.email?.split('@')[0] || 'User'}</span>
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          
+          {showUserMenu && (
+            <>
+              {/* Backdrop */}
+              <div 
+                className="fixed inset-0 z-40" 
+                onClick={() => setShowUserMenu(false)}
+              />
+              
+              {/* Menu */}
+              <div className="absolute right-0 top-full mt-1 w-64 bg-zinc-800 border border-zinc-700 rounded-md shadow-lg z-50">
+                <div className="p-3 border-b border-zinc-700">
+                  <p className="text-sm text-zinc-100 font-medium">{user?.email}</p>
+                  <p className="text-xs text-zinc-400">Signed in to Codestral IDE</p>
+                </div>
+                
+                <div className="p-1">
+                  <button
+                    onClick={handleSignOut}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-300 hover:text-zinc-100 hover:bg-zinc-700 rounded transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="h-4 w-px bg-zinc-700" />
 
         <button 
           className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded transition-colors"

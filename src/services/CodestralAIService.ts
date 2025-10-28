@@ -1,23 +1,37 @@
 import { AIMessage, CodeBlock } from '@/types';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase client
+const supabaseUrl = "https://dmexmkktelxxnxeckluk.supabase.co";
+const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRtZXhta2t0ZWx4eG54ZWNrbHVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1Mjk5MjgsImV4cCI6MjA3NzEwNTkyOH0.CiMnJHWNuzqW3q5Y_XQeo-hZz9b7doV95kjFcLF0Wl4";
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 class CodestralAIService {
   private conversationHistory: AIMessage[] = [];
   private messageIdCounter = 0;
 
   async generateCode(prompt: string, language: string = 'javascript'): Promise<string> {
-    // Simulate AI code generation with intelligent responses
-    await this.simulateDelay(1000);
+    try {
+      const { data, error } = await supabase.functions.invoke('codestral-ai', {
+        body: {
+          action: 'generateCode',
+          prompt,
+          language
+        }
+      });
 
-    const codeTemplates: Record<string, (prompt: string) => string> = {
-      javascript: (p) => this.generateJavaScriptCode(p),
-      typescript: (p) => this.generateTypeScriptCode(p),
-      python: (p) => this.generatePythonCode(p),
-      java: (p) => this.generateJavaCode(p),
-      go: (p) => this.generateGoCode(p),
-    };
+      if (error) {
+        console.error('Codestral AI error:', error);
+        throw new Error(`AI service error: ${error.message}`);
+      }
 
-    const generator = codeTemplates[language] || codeTemplates.javascript;
-    return generator(prompt);
+      return data?.data?.code || 'Failed to generate code';
+    } catch (error) {
+      console.error('Code generation failed:', error);
+      // Fallback to basic template if API fails
+      return this.getFallbackCode(prompt, language);
+    }
   }
 
   async chat(userMessage: string, context?: { code?: string; filePath?: string }): Promise<AIMessage> {
@@ -29,86 +43,110 @@ class CodestralAIService {
     };
     this.conversationHistory.push(userMsg);
 
-    await this.simulateDelay(800);
+    try {
+      const { data, error } = await supabase.functions.invoke('codestral-ai', {
+        body: {
+          action: 'chat',
+          prompt: userMessage,
+          messages: this.conversationHistory.slice(-10) // Send last 10 messages for context
+        }
+      });
 
-    const response = await this.generateResponse(userMessage, context);
-    const assistantMsg: AIMessage = {
-      id: this.generateMessageId(),
-      role: 'assistant',
-      content: response.content,
-      timestamp: new Date(),
-      codeBlocks: response.codeBlocks,
-    };
-    this.conversationHistory.push(assistantMsg);
+      if (error) {
+        throw new Error(`AI service error: ${error.message}`);
+      }
 
-    return assistantMsg;
+      const aiResponse = data?.data?.response || 'I apologize, but I encountered an issue processing your request.';
+      
+      const assistantMsg: AIMessage = {
+        id: this.generateMessageId(),
+        role: 'assistant',
+        content: aiResponse,
+        timestamp: new Date(),
+      };
+      
+      // Parse code blocks if they exist in the response
+      assistantMsg.codeBlocks = this.extractCodeBlocks(aiResponse);
+      
+      this.conversationHistory.push(assistantMsg);
+      return assistantMsg;
+    } catch (error) {
+      console.error('Chat failed:', error);
+      
+      // Fallback response
+      const fallbackMsg: AIMessage = {
+        id: this.generateMessageId(),
+        role: 'assistant',
+        content: "I'm experiencing technical difficulties. Please try again in a moment. In the meantime, I can help you with basic coding questions or provide code templates.",
+        timestamp: new Date(),
+      };
+      
+      this.conversationHistory.push(fallbackMsg);
+      return fallbackMsg;
+    }
   }
 
   async debugCode(code: string, error: string): Promise<string> {
-    await this.simulateDelay(1200);
+    try {
+      const { data, error: apiError } = await supabase.functions.invoke('codestral-ai', {
+        body: {
+          action: 'debugCode',
+          code,
+          prompt: error
+        }
+      });
 
-    return `I've analyzed the error and your code. Here's what's causing the issue:
+      if (apiError) {
+        throw new Error(`AI service error: ${apiError.message}`);
+      }
 
-**Problem**: ${error}
-
-**Root Cause**: The error typically occurs due to one of these reasons:
-1. Undefined variable or null reference
-2. Type mismatch or incorrect function signature
-3. Missing import or dependency
-
-**Suggested Fix**:
-\`\`\`
-${this.generateDebugFix(code, error)}
-\`\`\`
-
-**Explanation**: 
-- Added proper error handling
-- Fixed variable initialization
-- Ensured type safety
-
-Would you like me to explain any specific part of the fix?`;
+      return data?.data?.explanation || 'Unable to analyze the code at this time.';
+    } catch (error) {
+      console.error('Debug failed:', error);
+      return this.getFallbackDebugResponse(code, error as string);
+    }
   }
 
   async explainCode(code: string): Promise<string> {
-    await this.simulateDelay(1000);
+    try {
+      const { data, error } = await supabase.functions.invoke('codestral-ai', {
+        body: {
+          action: 'explainCode',
+          code
+        }
+      });
 
-    return `Let me break down this code for you:
+      if (error) {
+        throw new Error(`AI service error: ${error.message}`);
+      }
 
-**Purpose**: This code implements ${this.inferCodePurpose(code)}
-
-**Key Components**:
-1. **Data Structures**: Uses ${this.identifyDataStructures(code)}
-2. **Logic Flow**: ${this.describeLogicFlow(code)}
-3. **Time Complexity**: O(n) where n is the input size
-
-**Best Practices**:
-- Clean, readable code structure
-- Proper error handling
-- Type safety (if applicable)
-
-**Potential Improvements**:
-- Consider adding input validation
-- Could be optimized for edge cases
-- Add comprehensive error messages`;
+      return data?.data?.explanation || 'Unable to explain the code at this time.';
+    } catch (error) {
+      console.error('Code explanation failed:', error);
+      return this.getFallbackExplanation(code);
+    }
   }
 
   async suggestCompletion(code: string, cursorPosition: number): Promise<string[]> {
-    await this.simulateDelay(200);
+    try {
+      const { data, error } = await supabase.functions.invoke('codestral-ai', {
+        body: {
+          action: 'completeCode',
+          code: code.substring(0, cursorPosition),
+          language: this.detectLanguageFromCode(code)
+        }
+      });
 
-    // Intelligent code completion suggestions
-    const context = code.substring(Math.max(0, cursorPosition - 50), cursorPosition);
-    
-    if (context.includes('function ') || context.includes('const ')) {
-      return ['functionName', 'handleEvent', 'processData', 'getData', 'setData'];
-    }
-    if (context.includes('import ')) {
-      return ['React', 'useState', 'useEffect', 'Component'];
-    }
-    if (context.includes('.')) {
-      return ['map', 'filter', 'reduce', 'forEach', 'find', 'includes'];
-    }
+      if (error) {
+        throw new Error(`AI service error: ${error.message}`);
+      }
 
-    return ['const', 'let', 'function', 'class', 'import', 'export'];
+      const completion = data?.data?.completion || '';
+      return completion ? [completion] : this.getFallbackCompletions(code, cursorPosition);
+    } catch (error) {
+      console.error('Code completion failed:', error);
+      return this.getFallbackCompletions(code, cursorPosition);
+    }
   }
 
   getConversationHistory(): AIMessage[] {
@@ -119,292 +157,197 @@ Would you like me to explain any specific part of the fix?`;
     this.conversationHistory = [];
   }
 
+  // Save chat history to database
+  async saveChatHistory(workspaceId: string): Promise<void> {
+    if (!workspaceId || this.conversationHistory.length === 0) return;
+
+    try {
+      const { error } = await supabase
+        .from('chat_history')
+        .insert({
+          workspace_id: workspaceId,
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          messages: this.conversationHistory
+        });
+
+      if (error) {
+        console.error('Failed to save chat history:', error);
+      }
+    } catch (error) {
+      console.error('Error saving chat history:', error);
+    }
+  }
+
+  // Load chat history from database
+  async loadChatHistory(workspaceId: string): Promise<void> {
+    if (!workspaceId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('chat_history')
+        .select('messages')
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Failed to load chat history:', error);
+        return;
+      }
+
+      if (data?.messages) {
+        this.conversationHistory = data.messages;
+      }
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+    }
+  }
+
   private generateMessageId(): string {
     return `msg-${Date.now()}-${this.messageIdCounter++}`;
   }
 
-  private async generateResponse(message: string, context?: { code?: string; filePath?: string }): Promise<{ content: string; codeBlocks?: CodeBlock[] }> {
-    const lowerMessage = message.toLowerCase();
+  private extractCodeBlocks(content: string): CodeBlock[] {
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    const blocks: CodeBlock[] = [];
+    let match;
 
-    // Code generation requests
-    if (lowerMessage.includes('create') || lowerMessage.includes('write') || lowerMessage.includes('generate')) {
-      const language = this.detectLanguageFromMessage(message);
-      const code = await this.generateCode(message, language);
-      return {
-        content: `I'll help you create that. Here's the code:`,
-        codeBlocks: [{ language, code }],
-      };
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      blocks.push({
+        language: match[1] || 'text',
+        code: match[2].trim()
+      });
     }
 
-    // Debugging requests
-    if (lowerMessage.includes('debug') || lowerMessage.includes('error') || lowerMessage.includes('fix')) {
-      return {
-        content: `Let me help you debug that issue. ${context?.code ? 'Looking at your code, ' : ''}I can see a few potential problems and solutions.`,
-      };
-    }
-
-    // Explanation requests
-    if (lowerMessage.includes('explain') || lowerMessage.includes('how does') || lowerMessage.includes('what is')) {
-      return {
-        content: `Great question! Let me explain that for you in detail...`,
-      };
-    }
-
-    // Optimization requests
-    if (lowerMessage.includes('optimize') || lowerMessage.includes('improve') || lowerMessage.includes('better')) {
-      return {
-        content: `I can help you optimize that! Here are some suggestions for improvement...`,
-      };
-    }
-
-    // Default helpful response
-    return {
-      content: `I'm Codestral, your AI coding assistant. I can help you with:
-- Writing code in multiple languages
-- Debugging and fixing errors
-- Explaining complex concepts
-- Code optimization and best practices
-- Architecture and design suggestions
-
-What would you like me to help you with?`,
-    };
+    return blocks;
   }
 
-  private generateJavaScriptCode(prompt: string): string {
-    return `// Generated JavaScript code based on: ${prompt}
+  private detectLanguageFromCode(code: string): string {
+    // Simple language detection based on code patterns
+    if (code.includes('import React') || code.includes('useState')) return 'typescript';
+    if (code.includes('def ') || code.includes('import ')) return 'python';
+    if (code.includes('package ') || code.includes('func ')) return 'go';
+    if (code.includes('class ') && code.includes('public ')) return 'java';
+    if (code.includes('interface ') || code.includes(': string')) return 'typescript';
+    return 'javascript';
+  }
+
+  // Fallback methods for when API is not available
+  private getFallbackCode(prompt: string, language: string): string {
+    const templates: Record<string, string> = {
+      javascript: `// Generated JavaScript code for: ${prompt}
 function processData(input) {
   if (!input) {
     throw new Error('Input is required');
   }
-
-  const result = input
-    .filter(item => item != null)
-    .map(item => ({
-      ...item,
-      processed: true,
-      timestamp: Date.now()
-    }));
-
-  return result;
+  
+  // TODO: Implement your logic here
+  console.log('Processing:', input);
+  return input;
 }
 
-// Usage example
-const data = [{ id: 1, value: 'test' }];
-const processed = processData(data);
-console.log(processed);`;
-  }
-
-  private generateTypeScriptCode(prompt: string): string {
-    return `// Generated TypeScript code based on: ${prompt}
-interface DataItem {
-  id: number;
+// Usage
+const result = processData('example');
+console.log(result);`,
+      
+      typescript: `// Generated TypeScript code for: ${prompt}
+interface DataInput {
+  // TODO: Define your interface
   value: string;
-  processed?: boolean;
-  timestamp?: number;
 }
 
-function processData(input: DataItem[]): DataItem[] {
-  if (!input || input.length === 0) {
-    throw new Error('Input array is required');
+function processData(input: DataInput): DataInput {
+  if (!input) {
+    throw new Error('Input is required');
   }
-
-  return input
-    .filter((item): item is DataItem => item != null)
-    .map(item => ({
-      ...item,
-      processed: true,
-      timestamp: Date.now()
-    }));
+  
+  // TODO: Implement your logic here
+  console.log('Processing:', input);
+  return input;
 }
 
-// Usage example
-const data: DataItem[] = [{ id: 1, value: 'test' }];
-const processed = processData(data);
-console.log(processed);`;
-  }
-
-  private generatePythonCode(prompt: string): string {
-    return `# Generated Python code based on: ${prompt}
-from typing import List, Dict, Any
-from datetime import datetime
-
-def process_data(input_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Process input data and add metadata.
-    
-    Args:
-        input_data: List of dictionaries to process
-        
-    Returns:
-        Processed list with added metadata
-    """
+// Usage
+const result = processData({ value: 'example' });
+console.log(result);`,
+      
+      python: `# Generated Python code for: ${prompt}
+def process_data(input_data):
     if not input_data:
-        raise ValueError("Input data is required")
+        raise ValueError('Input is required')
     
-    result = []
-    for item in input_data:
-        if item is not None:
-            processed_item = {
-                **item,
-                'processed': True,
-                'timestamp': datetime.now().timestamp()
-            }
-            result.append(processed_item)
+    # TODO: Implement your logic here
+    print(f'Processing: {input_data}')
+    return input_data
+
+# Usage
+result = process_data('example')
+print(result)`
+    };
+
+    return templates[language] || templates.javascript;
+  }
+
+  private getFallbackDebugResponse(code: string, error: string): string {
+    return `**Debug Analysis** (Offline Mode)
+
+**Issue**: ${error}
+
+**Common Solutions**:
+1. Check for undefined variables or null references
+2. Verify function parameters and return types
+3. Ensure all imports and dependencies are available
+4. Add try-catch blocks for error handling
+
+**Suggested Actions**:
+- Add console.log statements to trace execution
+- Check the browser/console for additional error details
+- Verify all required libraries are imported
+- Test with simplified input data
+
+*Note: AI debugging service is temporarily unavailable. Please check your connection.*`;
+  }
+
+  private getFallbackExplanation(code: string): string {
+    const lines = code.split('\n').length;
+    const hasFunction = code.includes('function') || code.includes('=>');
+    const hasClass = code.includes('class');
+    const hasLoop = code.includes('for') || code.includes('while');
+
+    return `**Code Analysis** (Offline Mode)
+
+**Overview**: This code snippet contains ${lines} lines and appears to ${hasFunction ? 'define functions' : hasClass ? 'implement a class' : 'contain logic'}.
+
+**Structure**:
+${hasFunction ? '- Contains function definitions' : ''}
+${hasClass ? '- Uses object-oriented programming' : ''}
+${hasLoop ? '- Includes iterative processing' : ''}
+
+**Recommendations**:
+- Add comments to explain complex logic
+- Consider error handling for edge cases
+- Test with various input scenarios
+
+*Note: AI explanation service is temporarily unavailable. Please check your connection.*`;
+  }
+
+  private getFallbackCompletions(code: string, cursorPosition: number): string[] {
+    const context = code.substring(Math.max(0, cursorPosition - 20), cursorPosition);
     
-    return result
-
-# Usage example
-data = [{'id': 1, 'value': 'test'}]
-processed = process_data(data)
-print(processed)`;
-  }
-
-  private generateJavaCode(prompt: string): string {
-    return `// Generated Java code based on: ${prompt}
-import java.util.*;
-import java.time.Instant;
-
-public class DataProcessor {
-    
-    public static class DataItem {
-        public int id;
-        public String value;
-        public boolean processed;
-        public long timestamp;
-        
-        public DataItem(int id, String value) {
-            this.id = id;
-            this.value = value;
-        }
+    if (context.includes('console.')) {
+      return ['log', 'error', 'warn', 'info'];
+    }
+    if (context.includes('document.')) {
+      return ['getElementById', 'querySelector', 'createElement'];
+    }
+    if (context.includes('Array.')) {
+      return ['from', 'isArray'];
+    }
+    if (context.includes('.')) {
+      return ['map', 'filter', 'reduce', 'forEach', 'find'];
     }
     
-    public static List<DataItem> processData(List<DataItem> input) {
-        if (input == null || input.isEmpty()) {
-            throw new IllegalArgumentException("Input is required");
-        }
-        
-        List<DataItem> result = new ArrayList<>();
-        for (DataItem item : input) {
-            if (item != null) {
-                item.processed = true;
-                item.timestamp = Instant.now().toEpochMilli();
-                result.add(item);
-            }
-        }
-        
-        return result;
-    }
-    
-    public static void main(String[] args) {
-        List<DataItem> data = Arrays.asList(new DataItem(1, "test"));
-        List<DataItem> processed = processData(data);
-        System.out.println(processed);
-    }
-}`;
-  }
-
-  private generateGoCode(prompt: string): string {
-    return `// Generated Go code based on: ${prompt}
-package main
-
-import (
-    "fmt"
-    "time"
-)
-
-type DataItem struct {
-    ID        int    \`json:"id"\`
-    Value     string \`json:"value"\`
-    Processed bool   \`json:"processed"\`
-    Timestamp int64  \`json:"timestamp"\`
-}
-
-func processData(input []DataItem) ([]DataItem, error) {
-    if len(input) == 0 {
-        return nil, fmt.Errorf("input is required")
-    }
-
-    result := make([]DataItem, 0, len(input))
-    for _, item := range input {
-        item.Processed = true
-        item.Timestamp = time.Now().Unix()
-        result = append(result, item)
-    }
-
-    return result, nil
-}
-
-func main() {
-    data := []DataItem{{ID: 1, Value: "test"}}
-    processed, err := processData(data)
-    if err != nil {
-        panic(err)
-    }
-    fmt.Printf("%+v\\n", processed)
-}`;
-  }
-
-  private generateDebugFix(code: string, error: string): string {
-    return code.split('\n').map((line, index) => {
-      if (index === 0) {
-        return `try {
-  ${line}`;
-      }
-      if (index === 3) {
-        return `  ${line}
-} catch (error) {
-  console.error('Error:', error);
-  return null;
-}`;
-      }
-      return `  ${line}`;
-    }).join('\n');
-  }
-
-  private inferCodePurpose(code: string): string {
-    if (code.includes('function') || code.includes('=>')) {
-      return 'a function with specific business logic';
-    }
-    if (code.includes('class')) {
-      return 'a class-based component or data structure';
-    }
-    return 'data processing and manipulation';
-  }
-
-  private identifyDataStructures(code: string): string {
-    const structures: string[] = [];
-    if (code.includes('[]') || code.includes('Array')) structures.push('arrays');
-    if (code.includes('{}') || code.includes('Object')) structures.push('objects');
-    if (code.includes('Map')) structures.push('maps');
-    if (code.includes('Set')) structures.push('sets');
-    return structures.join(', ') || 'primitive data types';
-  }
-
-  private describeLogicFlow(code: string): string {
-    if (code.includes('if') && code.includes('else')) {
-      return 'Conditional branching with multiple paths';
-    }
-    if (code.includes('for') || code.includes('while')) {
-      return 'Iterative processing with loops';
-    }
-    if (code.includes('map') || code.includes('filter')) {
-      return 'Functional array transformations';
-    }
-    return 'Sequential execution of statements';
-  }
-
-  private detectLanguageFromMessage(message: string): string {
-    const lowerMessage = message.toLowerCase();
-    if (lowerMessage.includes('typescript') || lowerMessage.includes('ts')) return 'typescript';
-    if (lowerMessage.includes('python') || lowerMessage.includes('py')) return 'python';
-    if (lowerMessage.includes('java')) return 'java';
-    if (lowerMessage.includes('go') || lowerMessage.includes('golang')) return 'go';
-    if (lowerMessage.includes('rust')) return 'rust';
-    return 'javascript';
-  }
-
-  private async simulateDelay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return ['const', 'let', 'function', 'if', 'for', 'while'];
   }
 }
 

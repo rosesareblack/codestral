@@ -10,6 +10,9 @@ export interface FileNode {
   language?: string;
   isOpen?: boolean;
   isDirty?: boolean;
+  size?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface Workspace {
@@ -17,19 +20,30 @@ export interface Workspace {
   name: string;
   description: string;
   files: FileNode[];
-  vmId?: string;
+  vmId?: string | null;
   createdAt: Date;
   lastModified: Date;
+  settings?: any;
+  template?: string;
+  fileCount?: number;
 }
 
 export interface FirecrackerVM {
   id: string;
   workspaceId: string;
-  status: 'running' | 'stopped' | 'paused';
+  status: 'running' | 'stopped' | 'paused' | 'terminated';
   cpuCount: number;
   memoryMb: number;
   diskSizeGb: number;
   createdAt: Date;
+}
+
+export interface CodeExecutionResult {
+  success: boolean;
+  output: string;
+  error: string | null;
+  executionTime: number;
+  timestamp: Date;
 }
 
 export interface AIMessage {
